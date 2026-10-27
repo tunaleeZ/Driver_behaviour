@@ -29,7 +29,7 @@ def compose_features(data: dict, config: dict) -> np.ndarray:
         "d_yaw": _delta(geo[:, 4:5]), "d_pitch": _delta(geo[:, 5:6]),
     }
     lm = np.asarray(data["lm_sel"], dtype=np.float32)
-    if "landmarks_xy" in config:
+    if "landmarks_xy" in config.get("groups", []):
         lm = _normalize_landmarks(lm, geo, config)
         groups["landmarks_xy"] = lm.reshape(len(lm), -1)
     selected = []
@@ -135,12 +135,16 @@ class FrameClipDataset(Dataset):
     def __init__(self, metadata: pd.DataFrame, splits: pd.DataFrame, frame_root: str | Path,
                  split: str, window_size: int = 16, stride: int = 8,
                  short_segment_policy: str = "pad", input_size: int = 112,
-                 training: bool = False, augment: bool = True):
+                 training: bool = False, augment: bool = True,
+                 image_mean: tuple[float, float, float] | None = None,
+                 image_std: tuple[float, float, float] | None = None):
         self.frame_root = Path(frame_root)
         self.input_size = int(input_size)
         self.window_size = int(window_size)
         self.training = bool(training)
         self.augment = bool(augment and training)
+        self.image_mean = np.asarray(image_mean if image_mean is not None else (0.0, 0.0, 0.0), dtype=np.float32)
+        self.image_std = np.asarray(image_std if image_std is not None else (1.0, 1.0, 1.0), dtype=np.float32)
         if self.input_size <= 0 or window_size <= 0 or stride <= 0:
             raise ValueError("input_size, window_size, and stride must be positive")
         subject_splits = dict(zip(splits.subject_id.astype(str), splits.split.astype(str)))
@@ -190,6 +194,9 @@ class FrameClipDataset(Dataset):
             left = (clip.shape[2] - size) // 2
             clip = clip[:, top:top + size, left:left + size]
         tensor = torch.from_numpy(clip.copy()).permute(0, 3, 1, 2).float().div_(255.0)
+        mean = torch.as_tensor(self.image_mean)[None, :, None, None]
+        std = torch.as_tensor(self.image_std)[None, :, None, None]
+        tensor = (tensor - mean) / std.clamp_min(1e-6)
         return tensor, torch.tensor(label, dtype=torch.long), sid, padded
 
     def _augment_clip(self, clip: np.ndarray) -> np.ndarray:

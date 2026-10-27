@@ -2,38 +2,33 @@
 
 ## Trạng thái
 
-- Phase 1–5 theo handoff trước.
-- Phase 6 đã thêm CLI mở rộng lưới sweep, benchmark forward model bằng tensor tổng hợp và API inference trượt cho Geo/Landmark-LSTM.
-- Sweep `--dry-run --quick` liệt kê E0–E3; dry-run đầy đủ liệt kê các cấu hình E1–E3. E0 là entry mô tả baseline luật ngưỡng.
-- Benchmark không ghi file kết quả; thời gian in ra chỉ là chẩn đoán trên máy đang chạy, không dùng làm kết quả báo cáo.
-- Toàn bộ test tại thời điểm bàn giao: 127 passed. `compileall` và CLI help đã chạy.
+- Phase 1–3: hoàn tất theo các handoff trước.
+- Phase 4: đã có dữ liệu tổng hợp `.npz`, frame và video, có cờ `synthetic=true`; Geo-LSTM/Landmark-LSTM train/evaluate smoke, overfit test và synthetic summary guard đều được kiểm tra.
+- Phase 5: CNN-LSTM được train/evaluate qua `FrameClipDataset`; smoke train CPU và kiểm tra augmentation nhất quán trong clip pass.
+- Phase 6: `run_sweep --dry-run` liệt kê grid; `--quick` train tổng hợp E1–E3 với `last`, `mean`, `attention`. Inference end-to-end cho Geo, Landmark và CNN dùng video tổng hợp/extractor mock. Benchmark hỗ trợ tensor và đo extract/compose feature; thiếu model/video thì cảnh báo và bỏ qua.
+- Toàn bộ pytest: 137 passed. `compileall`, `git diff --check` và sweep dry-run pass. Có cảnh báo deprecation PyTorch ở `scheduler.step(epoch)` trong smoke train.
+- Không có kết quả benchmark hoặc kết quả thực nghiệm tổng hợp được ghi vào tài liệu. Các giá trị từ smoke chỉ xác nhận đường chạy.
 
-## Tệp Phase 6
+## Tệp và thành phần chính đã hoàn tất
 
-- `src/dbm/run_sweep.py`: mở rộng config sweep và dry-run.
-- `src/dbm/benchmark.py`: benchmark forward trên tensor tổng hợp, warmup, chọn CPU/GPU; cảnh báo và bỏ qua landmark benchmark nếu thiếu tài nguyên thật.
-- `src/dbm/infer_video.py`: inference trượt, smoothing EMA/majority vote, xuất CSV; có API nhận extractor để mock.
-- `tests/test_phase6_tools.py`: kiểm tra cấu hình quick, tensor benchmark và smoothing.
-- `docs/HANDOFF_PHASE7.md`: ghi trạng thái và các giới hạn cần xử lý trước khi kết thúc phase 7.
+- `src/dbm/data/synthetic.py`: sinh feature, frame, video, metadata/split tổng hợp.
+- `src/dbm/train.py`, `src/dbm/evaluate.py`, `src/dbm/data/datasets.py`: train/evaluate Geo, Landmark và CNN-LSTM; normalization chỉ fit trên train.
+- `src/dbm/run_sweep.py`, `configs/sweeps/*.yaml`: grid dry-run và quick smoke train trên dữ liệu tổng hợp.
+- `src/dbm/infer_video.py`: sliding-window timeline, EMA/majority vote cho cả ba model type.
+- `src/dbm/benchmark.py`: benchmark forward model và API benchmark extractor mock/thật.
+- `tests/test_synthetic_data.py`, `tests/test_phase6_tools.py`: smoke, overfit, guard synthetic, inference và benchmark.
 
 ## Lệnh xác nhận
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m dbm.run_sweep --dry-run --quick
-python -m dbm.run_sweep --dry-run
-python -m dbm.benchmark --config configs/models/geo_lstm.yaml
 python -m pytest -q
 python -m compileall -q src driver_behavior_dataset_v01/scripts
+python -m dbm.run_sweep --dry-run
+python -m dbm.run_sweep --dry-run --quick
+python -m dbm.run_sweep --quick
 ```
 
-## Việc còn thiếu cần xử lý trong phase 7
+## Tiếp theo: Phase 7
 
-1. Handoff phase 5 dự kiến `src/dbm/data/synthetic.py`, nhưng file không tồn tại. Bổ sung generator được gắn cờ `synthetic=true`, chỉ dùng cho test/smoke.
-2. `run_sweep --quick` hiện mới mở rộng danh sách, chưa chạy train tổng hợp; lệnh thực thi hiện báo rõ rằng trainer dữ liệu tổng hợp chưa có.
-3. `train.py`/`evaluate.py` hiện chỉ hỗ trợ Geo/Landmark-LSTM; CNN-LSTM chưa được tích hợp end-to-end. Sweep E3 chỉ được dry-run, không chạy train.
-4. `infer_video` hiện dành cho checkpoint Geo/Landmark-LSTM. Chưa có kiểm thử end-to-end bằng video tổng hợp và extractor mock; CNN-LSTM chưa hỗ trợ inference.
-5. Benchmark landmark/video thật chưa được cài đặt; hiện tự bỏ qua và cảnh báo. Không có số đo nào được thêm vào docs.
-6. Thực hiện các hạng mục Phase 7 trong `prompt.md`: hai notebook Kaggle dùng nbformat và clear outputs, kiểm thử notebook/CLI, cập nhật README/KAGGLE_GUIDE/ASSUMPTIONS, rà soát artifact và secrets.
-
-Các giới hạn trên được giữ rõ ràng để không báo cáo quá mức trạng thái triển khai. Không chạy huấn luyện thật hoặc thêm số liệu thực nghiệm.
+Chỉ thực hiện các hạng mục Kaggle và hoàn thiện được mô tả trong `prompt.md`: tạo hai notebook bằng nbformat, clear output, kiểm tra notebook/CLI, cập nhật README, `KAGGLE_GUIDE.md` và `ASSUMPTIONS.md`, rồi rà soát artifact/secrets. Chưa có video hoặc metadata thật nên không ghi nhận kết quả thực nghiệm.

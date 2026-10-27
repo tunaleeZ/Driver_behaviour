@@ -31,6 +31,12 @@ def setup_logging(
     datefmt:
         Date/time format string.
     """
+    # Keep Vietnamese CLI/log messages usable in Windows consoles using legacy code pages.
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        pass
     root = logging.getLogger()
     root.setLevel(level)
 

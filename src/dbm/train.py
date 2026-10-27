@@ -11,23 +11,36 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import cv2
 import torch
 import yaml
 from torch.utils.data import DataLoader
 
 from dbm.baselines.threshold_rule import grid_search_thresholds
 from dbm.config import load_config, save_config
-from dbm.data.datasets import GeoSequenceDataset, compose_features
+from dbm.data.datasets import GeoSequenceDataset, FrameClipDataset, compose_features
+from dbm.data.transforms import resize_frame
 from dbm.data.stats import fit_feature_stats, save_stats
 from dbm.labels import label_to_index, num_classes
 from dbm.logging_utils import setup_logging
 from dbm.losses import build_loss, class_weights_from_labels
 from dbm.metrics import aggregate_segment_probabilities, classification_metrics
-from dbm.models.build import build_lstm
+from dbm.models.build import build_lstm, build_cnn_lstm
 from dbm.paths import DatasetPaths
 from dbm.seed import set_global_seed, worker_init_fn
 
 logger = logging.getLogger(__name__)
+
+
+def append_result_summary(result: dict, path: Path) -> None:
+    """Append a real result row and reject all synthetic metrics."""
+    if result.get("synthetic", False):
+        raise ValueError("Synthetic runs are forbidden from outputs/results_summary.csv")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import pandas as pd
+    row = {key: value for key, value in result.items() if not isinstance(value, (dict, list))}
+    pd.DataFrame([row]).to_csv(path, mode="a", header=not path.exists(), index=False)
 
 
 def _load_feature_config(repo: Path, variant: str) -> dict:
@@ -49,6 +62,35 @@ def _train_stats(metadata: pd.DataFrame, splits: pd.DataFrame, feature_root: Pat
         with np.load(feature_root / f"{sid}.npz") as archive:
             seqs.append(compose_features({k: archive[k] for k in archive.files}, feature_config))
     return fit_feature_stats(seqs)
+
+
+def _train_image_stats(metadata: pd.DataFrame, splits: pd.DataFrame, frame_root: Path,
+                       input_size: int) -> dict:
+    """Fit RGB channel statistics using training subjects and frames only."""
+    mapping = dict(zip(splits.subject_id.astype(str), splits.split.astype(str)))
+    train_rows = metadata[(metadata.quality.astype(str).str.lower() != "bad") &
+                          (metadata.subject_id.astype(str).map(mapping) == "train")]
+    total = np.zeros(3, dtype=np.float64)
+    squared = np.zeros(3, dtype=np.float64)
+    count = 0
+    for segment_id in train_rows.segment_id.astype(str):
+        for path in sorted((frame_root / segment_id).glob("*.jpg")):
+            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError(f"Could not decode training frame {path}")
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = resize_frame(image, (128, 128), "letterbox")
+            offset = (128 - input_size) // 2
+            values = image[offset:offset + input_size, offset:offset + input_size].astype(np.float64) / 255.0
+            total += values.sum(axis=(0, 1))
+            squared += np.square(values).sum(axis=(0, 1))
+            count += input_size * input_size
+    if count == 0:
+        raise ValueError("No training frames are available to fit image statistics")
+    mean = total / count
+    std = np.sqrt(np.maximum(squared / count - np.square(mean), 0.0))
+    std[std < 1e-6] = 1.0
+    return {"mean": mean.tolist(), "std": std.tolist()}
 
 
 def _run_epoch(model, loader, criterion, device, optimizer=None, scaler=None, amp=False, clip=1.0):
@@ -84,14 +126,29 @@ def train(config_path: Path, overrides: list[str] | None = None, root: Path | No
     paths = DatasetPaths(dataset_root=root, work_root=work_root)
     metadata = pd.read_csv(paths.metadata_csv)
     splits = pd.read_csv(paths.splits_csv)
-    feature_config = _load_feature_config(repo, str(config.get("feature_config", "geo")))
-    stats = _train_stats(metadata, splits, paths.landmarks, feature_config)
-    train_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "train", feature_config,
-                                  config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
-    val_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "val", feature_config,
-                                config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
-    test_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "test", feature_config,
-                                 config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
+    config["synthetic"] = bool("synthetic" in metadata and metadata["synthetic"].fillna(False).astype(bool).any())
+    cnn_model = config.get("model_type") == "cnn_lstm"
+    if cnn_model:
+        stats = _train_image_stats(metadata, splits, paths.frames, int(config.get("input_size", 112)))
+        dataset_args = (metadata, splits, paths.frames)
+        train_ds = FrameClipDataset(*dataset_args, "train", config["window_size"], config["stride"],
+                                    config.get("short_segment_policy", "pad"), int(config.get("input_size", 112)), True, True,
+                                    tuple(stats["mean"]), tuple(stats["std"]))
+        val_ds = FrameClipDataset(*dataset_args, "val", config["window_size"], config["stride"],
+                                  config.get("short_segment_policy", "pad"), int(config.get("input_size", 112)), False, False,
+                                  tuple(stats["mean"]), tuple(stats["std"]))
+        test_ds = FrameClipDataset(*dataset_args, "test", config["window_size"], config["stride"],
+                                   config.get("short_segment_policy", "pad"), int(config.get("input_size", 112)), False, False,
+                                   tuple(stats["mean"]), tuple(stats["std"]))
+    else:
+        feature_config = _load_feature_config(repo, str(config.get("feature_config", "geo")))
+        stats = _train_stats(metadata, splits, paths.landmarks, feature_config)
+        train_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "train", feature_config,
+                                      config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
+        val_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "val", feature_config,
+                                    config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
+        test_ds = GeoSequenceDataset(metadata, splits, paths.landmarks, "test", feature_config,
+                                     config["window_size"], config["stride"], config.get("short_segment_policy", "pad"), stats)
     if not train_ds or not val_ds:
         raise ValueError("Train and validation datasets must contain at least one window")
     train_loader = DataLoader(train_ds, batch_size=int(config["batch_size"]), shuffle=True,
@@ -100,10 +157,10 @@ def train(config_path: Path, overrides: list[str] | None = None, root: Path | No
                             num_workers=int(config.get("num_workers", 0)), worker_init_fn=worker_init_fn)
     test_loader = DataLoader(test_ds, batch_size=int(config["batch_size"]), shuffle=False,
                              num_workers=int(config.get("num_workers", 0)), worker_init_fn=worker_init_fn) if len(test_ds) else None
-    feature_dim = train_ds[0][0].shape[-1]
+    feature_dim = train_ds[0][0].shape[-1] if not cnn_model else None
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_lstm(config, feature_dim).to(device)
-    labels = [window.label for window in train_ds.windows]
+    model = (build_cnn_lstm(config) if cnn_model else build_lstm(config, feature_dim)).to(device)
+    labels = [sample[1] for sample in train_ds.samples] if cnn_model else [window.label for window in train_ds.windows]
     weights = class_weights_from_labels(labels, num_classes(), config.get("loss_weight_cap")).to(device)
     criterion = build_loss(str(config.get("loss", "cross_entropy")), weights,
                            float(config.get("focal_gamma", 2.0)), cost_lambda=float(config.get("cost_sensitive_lambda", .5)))
@@ -137,10 +194,11 @@ def train(config_path: Path, overrides: list[str] | None = None, root: Path | No
         scheduler.step(val_loss if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else epoch)
         history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "val_macro_f1": score})
         logger.info("epoch=%d train_loss=%.4f val_loss=%.4f val_macro_f1=%.4f", epoch, train_loss, val_loss, score)
-        torch.save({"model": model.state_dict(), "config": config, "input_dim": feature_dim, "epoch": epoch}, out / "last.pt")
+        checkpoint_data = {"model": model.state_dict(), "config": config, "input_dim": feature_dim, "epoch": epoch}
+        torch.save(checkpoint_data, out / "last.pt")
         if score > best:
             best = score; stale = 0
-            torch.save({"model": model.state_dict(), "config": config, "input_dim": feature_dim, "epoch": epoch}, out / "best.pt")
+            torch.save(checkpoint_data, out / "best.pt")
         else:
             stale += 1
         if stale >= int(config.get("early_stopping_patience", 10)):
@@ -157,6 +215,7 @@ def train(config_path: Path, overrides: list[str] | None = None, root: Path | No
         seg_ids, seg_probs, seg_y = aggregate_segment_probabilities(ids, probs, y)
         result["segment"] = classification_metrics(seg_y, seg_probs.argmax(1), num_classes())
         result["segment_ids"] = seg_ids
+    result["synthetic"] = config["synthetic"]
     (out / "results.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     _save_confusion(out, result)
     return out
@@ -167,6 +226,8 @@ def _save_confusion(out: Path, result: dict) -> None:
     if "window" not in result:
         return
     try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
         matrix = np.asarray(result["window"]["confusion_matrix"])
         normalized = np.asarray(result["window"]["confusion_matrix_normalized"])
@@ -186,6 +247,8 @@ def _save_confusion(out: Path, result: dict) -> None:
 def _save_learning_curves(out: Path, history: list[dict]) -> None:
     """Save loss and validation macro-F1 curves when matplotlib is available."""
     try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
         epochs = [row["epoch"] for row in history]
         fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))

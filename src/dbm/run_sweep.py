@@ -2,9 +2,11 @@
 from __future__ import annotations
 import argparse, itertools, logging
 from pathlib import Path
+import tempfile
 import yaml
 from dbm.config import load_config
 from dbm.train import train
+from dbm.data.synthetic import generate_synthetic_dataset
 from dbm.logging_utils import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -33,10 +35,19 @@ def main(argv=None) -> int:
         runs.insert(0, (Path("E0 threshold baseline"), {"model_type": "threshold_rule", "mode": "threshold grid search"}))
     for i, (path, cfg) in enumerate(runs, 1):
         logger.info("%03d/%03d %s %s", i, len(runs), path.stem, {k: cfg[k] for k in ("model_type", "window_size", "pooling", "loss", "seed") if k in cfg})
-        if not args.dry_run:
-            if cfg.get("model_type") == "cnn_lstm":
-                raise NotImplementedError("CNN-LSTM dataset training is not integrated in train.py yet.")
-            raise NotImplementedError("Sweep execution needs a prepared real dataset; synthetic training is unavailable in this repository.")
+    if not args.dry_run:
+        actual = [(path, cfg) for path, cfg in runs if cfg.get("model_type") != "threshold_rule"]
+        if not args.quick:
+            raise ValueError("Executing the full sweep is intentionally explicit; use --quick for the synthetic smoke grid.")
+        with tempfile.TemporaryDirectory(prefix="dbm_sweep_") as temp_root:
+            data_root = Path(temp_root) / "dataset"
+            generate_synthetic_dataset(data_root, samples_per_class=3, frames_per_segment=2,
+                                       fps=2, size=32, seed=42)
+            for i, (sweep_path, cfg) in enumerate(actual, 1):
+                base_config = yaml.safe_load(Path(sweep_path).read_text(encoding="utf-8"))["base_config"]
+                config_path = repo / base_config
+                overrides = [f"{key}={yaml.safe_dump(value, default_flow_style=True).strip()}" for key, value in cfg.items()]
+                train(config_path, overrides, data_root, data_root, f"_smoke/sweep_{sweep_path.stem}_{cfg['pooling']}_{i}")
     logger.info("Tổng số run: %d", len(runs)); return 0
 
 if __name__ == "__main__": raise SystemExit(main())

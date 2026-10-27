@@ -11,9 +11,10 @@ grid:
 
 # Quick mode overrides (--quick flag)
 quick:
-  window_size: [30]
-  pooling: ["mean"]
+  window_size: [2]
+  stride: [2]
+  pooling: ["last", "mean", "attention"]
   loss: ["cross_entropy"]
-  max_epochs: 2
+  max_epochs: 1
   seed: [42]
 
