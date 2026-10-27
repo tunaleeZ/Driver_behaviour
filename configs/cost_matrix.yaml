@@ -1,0 +1,16 @@
+# Cost-sensitive loss: cost matrix C[true_label, predicted_label]
+# Row = ground truth label, Column = predicted label (order from labels.yaml)
+# Diagonal = 0 (correct prediction, no cost)
+#
+# IMPORTANT: These are PLACEHOLDER values for initial experiments only.
+# The group MUST justify and revise these values before using results in the report.
+# See docs/ASSUMPTIONS.md for discussion.
+#
+#                normal  drowsy  sleepy  drinking  phone
+cost_matrix:
+  normal:        [0,     1,      1,      1,        1]
+  drowsy:        [4,     0,      1,      2,        2]
+  sleepy:        [3,     1,      0,      2,        2]
+  drinking:      [2,     2,      2,      0,        1]
+  phone:         [3,     2,      2,      1,        0]
+

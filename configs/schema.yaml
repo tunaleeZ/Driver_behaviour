@@ -1,0 +1,42 @@
+# Schema validation configuration
+# Valid enum values for metadata fields and warning thresholds.
+# Groups should review and update these values before use.
+
+camera_view:
+  - front
+  - left
+  - right
+  - dashboard
+  - unknown
+
+lighting:
+  - day
+  - night
+  - low_light
+  - mixed
+  - unknown
+
+glasses:
+  - none
+  - glasses
+  - sunglasses
+  - unknown
+
+occlusion:
+  - none
+  - partial
+  - heavy
+  - unknown
+
+quality:
+  - good
+  - acceptable
+  - bad
+
+# Segment duration warnings (seconds)
+min_segment_duration: 1.0   # segments shorter than this get a WARNING
+max_segment_duration: 60.0  # segments longer than this get a WARNING
+
+# segment_id format regex
+segment_id_pattern: "^SEG[0-9]{6}$"
+

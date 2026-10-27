@@ -1,0 +1,19 @@
+# Sweep E1: Geo-LSTM (Variant A) — geometric features only
+# Grid search over T, pooling, and loss function.
+
+base_config: "configs/models/geo_lstm.yaml"
+
+grid:
+  window_size: [30, 60, 90]
+  pooling: ["last", "mean", "attention"]
+  loss: ["cross_entropy", "weighted_cross_entropy", "focal", "cost_sensitive"]
+  seed: [42, 123]
+
+# Quick mode overrides (--quick flag)
+quick:
+  window_size: [30]
+  pooling: ["mean"]
+  loss: ["cross_entropy"]
+  max_epochs: 2
+  seed: [42]
+

@@ -1,0 +1,21 @@
+# Sweep E2: Landmark-LSTM (Variant B)
+# Grid search over T, pooling, loss, and cost_sensitive_lambda.
+
+base_config: "configs/models/landmark_lstm.yaml"
+
+grid:
+  feature_config: ["landmark_lstm"]
+  window_size: [30, 60, 90]
+  pooling: ["last", "mean", "attention"]
+  loss: ["cross_entropy", "weighted_cross_entropy", "focal", "cost_sensitive"]
+  cost_sensitive_lambda: [0.1, 0.5, 1.0]
+  seed: [42, 123]
+
+quick:
+  feature_config: ["landmark_lstm"]
+  window_size: [30]
+  pooling: ["mean"]
+  loss: ["cross_entropy"]
+  max_epochs: 2
+  seed: [42]
+

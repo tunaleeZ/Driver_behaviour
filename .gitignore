@@ -1,0 +1,68 @@
+# ============================================================
+# Driver Behavior Monitoring — .gitignore
+# ============================================================
+
+# --- Heavy data (NEVER commit to GitHub) ---
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.npz
+*.npy
+
+# --- Model weights ---
+*.pt
+*.pth
+*.task
+/models/*
+!/models/.gitkeep
+
+# --- Generated outputs ---
+/outputs/*
+!/outputs/.gitkeep
+driver_behavior_dataset_v01/raw/*
+!driver_behavior_dataset_v01/raw/**/.gitkeep
+driver_behavior_dataset_v01/segments/*/*
+driver_behavior_dataset_v01/processed/*
+!driver_behavior_dataset_v01/processed/**/.gitkeep
+driver_behavior_dataset_v01/features/*
+!driver_behavior_dataset_v01/features/**/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+.env
+.venv
+venv/
+env/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDEs ---
+.vscode/settings.json
+.idea/
+
+# --- Secrets / tokens ---
+*.pem
+*.key
+*.secret
+secrets.yaml
+
+# --- Logs ---
+*.log
+
+# Keep .gitkeep files
+!**/.gitkeep
+

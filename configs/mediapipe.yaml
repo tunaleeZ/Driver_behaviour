@@ -1,0 +1,33 @@
+# MediaPipe Face Landmarker configuration
+# Reference: https://developers.google.com/mediapipe/solutions/vision/face_landmarker
+
+# Official model download URL
+model_url: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+
+# FaceLandmarker options
+num_faces: 1
+
+# Detection confidence (range 0.0-1.0)
+# Higher = fewer false positives but more missed detections.
+# Experiment range: 0.5-0.7
+min_face_detection_confidence: 0.5
+
+# Face presence confidence (range 0.0-1.0)
+min_face_presence_confidence: 0.5
+
+# Tracking confidence (range 0.0-1.0)
+# Lower = easier to lose tracking, higher = slower re-detection.
+min_tracking_confidence: 0.5
+
+# Feature extraction FPS (null = keep original video FPS)
+feature_fps: 30
+
+# Missing face handling
+# Maximum consecutive frames without detection to fill by interpolation
+max_gap_frames: 5
+
+# Minimum ratio of valid (detected) frames per window
+# Windows below this threshold are dropped or warned (configurable)
+min_valid_ratio: 0.8
+missing_frame_policy: "warn"   # "warn" or "drop"
+

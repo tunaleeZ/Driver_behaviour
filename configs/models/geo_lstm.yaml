@@ -1,0 +1,37 @@
+# Geo-LSTM Variant A configuration (baseline geometric features only)
+# Extends landmark_lstm.yaml defaults but uses only 4 geometric features.
+
+model_type: "lstm_classifier"
+feature_config: "geo"   # [ear, mar, d_yaw, d_pitch] -> D=4
+
+hidden_size: 64
+num_layers: 1
+dropout: 0.3
+pooling: "mean"
+
+optimizer: "adamw"
+lr: 1.0e-3
+weight_decay: 1.0e-4
+batch_size: 64
+max_epochs: 50
+gradient_clip: 1.0
+early_stopping_patience: 10
+early_stopping_metric: "val_macro_f1"
+
+scheduler: "reduce_on_plateau"
+scheduler_patience: 5
+scheduler_factor: 0.5
+
+window_size: 30
+stride: 15
+short_segment_policy: "pad"
+num_workers: 0
+
+loss: "weighted_cross_entropy"
+focal_gamma: 2.0
+cost_sensitive_lambda: 0.5
+loss_weight_cap: 10.0
+
+seed: 42
+use_amp: true
+

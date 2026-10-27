@@ -1,0 +1,18 @@
+# Set default line endings to LF for cross-platform consistency
+* text=auto
+
+# Force binary for media and model files
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.mkv binary
+*.webm binary
+*.npz binary
+*.npy binary
+*.pt  binary
+*.pth binary
+*.task binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+

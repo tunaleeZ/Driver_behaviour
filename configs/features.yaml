@@ -1,0 +1,120 @@
+# Feature extraction configuration
+# All landmark indices reference MediaPipe Face Mesh 478-point topology.
+# IMPORTANT: Verify indices using visualize_landmarks.py before training.
+# See docs/ASSUMPTIONS.md for verification status.
+
+# --- EAR (Eye Aspect Ratio) landmark indices ---
+# Each eye: [p1, p2, p3, p4, p5, p6] in the standard 6-point formulation
+# EAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)
+ear:
+  right_eye: [33, 160, 158, 133, 153, 144]   # p1..p6
+  left_eye:  [362, 385, 387, 263, 373, 380]  # p1..p6
+
+# --- MAR (Mouth Aspect Ratio) landmark indices ---
+# Inner lip: [p1, p2, p3, p4, p5, p6]
+# MAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)
+mar:
+  mouth: [78, 82, 312, 308, 317, 87]  # p1..p6
+
+# --- Head pose (solvePnP) landmark indices ---
+# 6-point model: nose tip, chin, outer corners of eyes, mouth corners
+head_pose:
+  landmarks_2d: [1, 152, 263, 33, 291, 61]
+  # Generic 3D face model (mm, right-handed, nose-centred)
+  model_3d:
+    - [0.0,    0.0,    0.0]     # nose tip (1)
+    - [0.0,   -63.6,  -12.5]   # chin (152)
+    - [-43.3,  32.7,  -26.0]   # left eye outer corner (263)
+    - [43.3,   32.7,  -26.0]   # right eye outer corner (33)
+    - [-28.9, -28.9,  -24.1]   # left mouth corner (291)
+    - [28.9,  -28.9,  -24.1]   # right mouth corner (61)
+
+# --- Selected landmarks for Landmark-LSTM (K landmark) ---
+# Default selection: eyelid contours, outer lip, inner lip, nose tip,
+# chin, forehead, face boundary points 234 and 454.
+# K = len(selected_landmarks) — this is a hyperparameter to tune.
+# ASSUMPTION: indices below are reasonable defaults; verify visually.
+selected_landmarks:
+  # Right eye contour (6 points)
+  - 33
+  - 160
+  - 158
+  - 133
+  - 153
+  - 144
+  # Left eye contour (6 points)
+  - 362
+  - 385
+  - 387
+  - 263
+  - 373
+  - 380
+  # Outer lip (8 points)
+  - 61
+  - 185
+  - 40
+  - 39
+  - 37
+  - 0
+  - 267
+  - 269
+  - 270
+  - 291
+  # Inner lip (8 points)
+  - 78
+  - 82
+  - 87
+  - 14
+  - 317
+  - 312
+  - 308
+  - 324
+  # Key face structure
+  - 1    # nose tip
+  - 152  # chin
+  - 10   # forehead
+  - 234  # left face boundary
+  - 454  # right face boundary
+
+# --- Landmark normalization for Landmark-LSTM ---
+# Options: "nose", "midpoint_eyes"
+normalization_origin: "nose"
+
+# Scale: divide (x, y) by inter-ocular distance
+normalization_scale: "inter_ocular"
+
+# Whether to rotate coordinates to compensate for roll angle
+normalize_roll: false
+
+# --- Feature groups (compose input vector) ---
+# Available groups: landmarks_xy, ear, mar, yaw, pitch, roll, d_yaw, d_pitch
+# Variant A (geo, baseline): [ear, mar, d_yaw, d_pitch]  -> D=4
+# Variant B (landmark_lstm): [landmarks_xy, ear, mar, d_yaw, d_pitch] -> D=2K+4
+# Ablation geo7: [ear, mar, yaw, pitch, roll, d_yaw, d_pitch] -> D=7
+feature_configs:
+  geo:
+    groups: [ear, mar, d_yaw, d_pitch]
+  geo7:
+    groups: [ear, mar, yaw, pitch, roll, d_yaw, d_pitch]
+  landmark_lstm:
+    groups: [landmarks_xy, ear, mar, d_yaw, d_pitch]
+
+# --- Temporal window ---
+# T: window length in frames (hyperparameter — not yet confirmed optimal)
+# Experiment values for Landmark-LSTM: 30, 60, 90
+# Experiment values for CNN-LSTM: 16, 32
+window_size: 30
+stride: 15   # default T/2
+
+# What to do with segments shorter than T frames
+# "pad": repeat last frame and mark padded positions
+# "drop": discard segment entirely
+short_segment_policy: "pad"
+
+# Frame extraction for CNN-LSTM
+frame_extraction:
+  target_fps: 10          # frames per second to extract (8-10)
+  store_size: [128, 128]  # stored frame size (H x W)
+  resize_mode: "letterbox"   # letterbox | squash | center_crop
+  jpeg_quality: 95
+

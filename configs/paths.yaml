@@ -1,0 +1,19 @@
+# Path configuration for Driver Behavior Monitoring
+# Priority: env vars > this file > Kaggle auto-detection > relative repo paths
+# Env vars: DBM_RAW_ROOT, DBM_WORK_ROOT, DBM_FACE_LANDMARKER_PATH
+
+# Root of the dataset (where raw/, segments/, processed/, features/ live)
+# On Kaggle this is typically /kaggle/input/<dataset-slug>
+dataset_root: "driver_behavior_dataset_v01"
+
+# Working root — writable directory for outputs (segments, processed, features)
+# On Kaggle use /kaggle/working/dbd_work
+work_root: "driver_behavior_dataset_v01"
+
+# Path to face_landmarker.task (MediaPipe model file)
+# Override with env var DBM_FACE_LANDMARKER_PATH
+face_landmarker_path: "models/face_landmarker.task"
+
+# Output directory for training runs
+outputs_dir: "outputs"
+

@@ -1,0 +1,18 @@
+# Sweep E3: CNN-LSTM
+# Grid search over T, pooling, and loss.
+
+base_config: "configs/models/cnn_lstm.yaml"
+
+grid:
+  window_size: [16, 32]
+  pooling: ["last", "mean", "attention"]
+  loss: ["cross_entropy", "weighted_cross_entropy", "focal", "cost_sensitive"]
+  seed: [42, 123]
+
+quick:
+  window_size: [16]
+  pooling: ["mean"]
+  loss: ["cross_entropy"]
+  max_epochs: 2
+  seed: [42]
+

@@ -1,0 +1,23 @@
+# Label definitions for Driver Behavior Monitoring
+# Source of truth for class indices — all other modules read from here.
+# DO NOT change the order or indices without updating all downstream code.
+
+labels:
+  - index: 0
+    name: normal
+    description: "Tư thế ổn định, không phone, không uống, không có dấu hiệu buồn ngủ"
+  - index: 1
+    name: drowsy
+    description: "Mất tỉnh táo rõ (đầu gục rồi phục hồi, mắt nhắm lâu), nhấn mạnh chuỗi theo thời gian"
+  - index: 2
+    name: sleepy
+    description: "Buồn ngủ nhưng chưa gục (mắt khép lâu, chớp chậm, đầu hơi cúi)"
+  - index: 3
+    name: drinking
+    description: "Chuỗi tay lên, chai/cốc tới miệng, uống, hạ xuống"
+  - index: 4
+    name: phone
+    description: "Điện thoại trong tay và người lái đang nhìn/tương tác"
+
+num_classes: 5
+
