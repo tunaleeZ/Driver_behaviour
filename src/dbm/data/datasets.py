@@ -7,9 +7,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import cv2
 from torch.utils.data import Dataset
 
 from dbm.data.stats import normalize_features
+from dbm.data.transforms import resize_frame
 from dbm.data.windows import Window, make_windows
 from dbm.labels import label_to_index
 
@@ -125,4 +127,90 @@ class GeoSequenceDataset(Dataset):
         item = self.windows[index]
         return (torch.from_numpy(item.values.copy()), torch.tensor(item.label, dtype=torch.long),
                 item.segment_id, item.padded)
+
+
+class FrameClipDataset(Dataset):
+    """Build temporally consistent RGB clips from extracted segment frames."""
+
+    def __init__(self, metadata: pd.DataFrame, splits: pd.DataFrame, frame_root: str | Path,
+                 split: str, window_size: int = 16, stride: int = 8,
+                 short_segment_policy: str = "pad", input_size: int = 112,
+                 training: bool = False, augment: bool = True):
+        self.frame_root = Path(frame_root)
+        self.input_size = int(input_size)
+        self.window_size = int(window_size)
+        self.training = bool(training)
+        self.augment = bool(augment and training)
+        if self.input_size <= 0 or window_size <= 0 or stride <= 0:
+            raise ValueError("input_size, window_size, and stride must be positive")
+        subject_splits = dict(zip(splits.subject_id.astype(str), splits.split.astype(str)))
+        rows = metadata[(metadata.quality.astype(str).str.lower() != "bad") &
+                        (metadata.subject_id.astype(str).map(subject_splits) == split)]
+        self.samples: list[tuple[str, int, list[Path], bool]] = []
+        for row in rows.to_dict("records"):
+            sid = str(row["segment_id"])
+            directory = self.frame_root / sid
+            frames = sorted(directory.glob("*.jpg"))
+            if not frames:
+                raise FileNotFoundError(f"No extracted JPG frames found for {sid}: {directory}")
+            n = len(frames)
+            if n < window_size:
+                if short_segment_policy == "drop":
+                    continue
+                if short_segment_policy != "pad":
+                    raise ValueError("short_segment_policy must be 'pad' or 'drop'")
+                self.samples.append((sid, label_to_index(str(row["label"])), frames, True))
+            else:
+                for start in range(0, n - window_size + 1, stride):
+                    self.samples.append((sid, label_to_index(str(row["label"])),
+                                         frames[start:start + window_size], False))
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int):
+        sid, label, paths, padded = self.samples[index]
+        images = []
+        for path in paths:
+            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError(f"Could not decode frame: {path}")
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = resize_frame(image, (128, 128), "letterbox")
+            images.append(image)
+        clip = np.stack(images)
+        if padded:
+            clip = np.concatenate((clip, np.repeat(clip[-1:],
+                                   max(0, self.window_size - len(paths)), axis=0)), axis=0)
+        if self.augment:
+            clip = self._augment_clip(clip)
+        else:
+            size = self.input_size
+            top = (clip.shape[1] - size) // 2
+            left = (clip.shape[2] - size) // 2
+            clip = clip[:, top:top + size, left:left + size]
+        tensor = torch.from_numpy(clip.copy()).permute(0, 3, 1, 2).float().div_(255.0)
+        return tensor, torch.tensor(label, dtype=torch.long), sid, padded
+
+    def _augment_clip(self, clip: np.ndarray) -> np.ndarray:
+        """Apply one crop, rotation, brightness, and contrast choice to all frames."""
+        h, w = clip.shape[1:3]
+        size = min(h, w)
+        crop = int(np.random.randint(self.input_size, size + 1))
+        top = int(np.random.randint(0, h - crop + 1))
+        left = int(np.random.randint(0, w - crop + 1))
+        angle = float(np.random.uniform(-5.0, 5.0))
+        brightness = float(np.random.uniform(0.9, 1.1))
+        contrast = float(np.random.uniform(0.9, 1.1))
+        result = []
+        for frame in clip:
+            frame = frame[top:top + crop, left:left + crop]
+            frame = cv2.resize(frame, (self.input_size, self.input_size), interpolation=cv2.INTER_LINEAR)
+            center = self.input_size / 2
+            matrix = cv2.getRotationMatrix2D((center, center), angle, 1.0)
+            frame = cv2.warpAffine(frame, matrix, (self.input_size, self.input_size), borderMode=cv2.BORDER_REFLECT_101)
+            frame = np.clip((frame.astype(np.float32) - 127.5) * contrast + 127.5, 0, 255)
+            frame = np.clip(frame * brightness, 0, 255).astype(np.uint8)
+            result.append(frame)
+        return np.stack(result)
 
