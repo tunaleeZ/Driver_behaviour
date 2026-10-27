@@ -2,8 +2,8 @@
 src/dbm/data/splits.py — Subject-level train/val/test split utilities.
 
 Split order: Subject -> Train/Val/Test -> Video -> Segment -> Frame -> Window.
-Uses a greedy algorithm with seed to approximate 70/20/10 ratio by total seconds,
-while keeping each subject in exactly one split.
+Uses a seeded greedy objective to approximate split duration and per-class
+duration, while keeping each subject in exactly one split.
 """
 
 from __future__ import annotations
@@ -60,8 +60,9 @@ def make_splits(
     # Filter quality=bad
     df = metadata_df[metadata_df["quality"].str.lower() != "bad"].copy()
 
-    # Compute total duration per subject (in seconds)
+    # Aggregate duration by subject and class before assigning any segments.
     subject_durations: dict[str, float] = defaultdict(float)
+    subject_class_durations: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for _, row in df.iterrows():
         try:
             dur = float(row.get("duration", 0) or 0)
@@ -70,6 +71,7 @@ def make_splits(
         sid = str(row.get("subject_id", "")).strip()
         if sid:
             subject_durations[sid] += dur
+            subject_class_durations[sid][str(row.get("label", ""))] += dur
 
     if not subject_durations:
         raise ValueError("No valid subjects found in metadata after filtering quality=bad")
@@ -77,24 +79,54 @@ def make_splits(
     subjects = sorted(subject_durations.keys())
     total_dur = sum(subject_durations.values())
 
-    # Shuffle subjects with seed
+    labels = sorted(valid_label_names())
+    # Place large and class-concentrated subjects first. Seed only resolves ties.
     rng = random.Random(seed)
-    rng.shuffle(subjects)
-
-    # Greedy assignment: fill each split bucket up to its target
-    target_durs = {s: ratios[s] * total_dur for s in SPLIT_NAMES}
+    tie_break = {subject: rng.random() for subject in subjects}
+    subjects.sort(key=lambda subject: (
+        -max((subject_class_durations[subject].get(label, 0.0) for label in labels), default=0.0),
+        -subject_durations[subject], tie_break[subject],
+    ))
+    target_durs = {split: ratios[split] * total_dur for split in SPLIT_NAMES}
+    total_by_class = {
+        label: sum(subject_class_durations[s].get(label, 0.0) for s in subjects)
+        for label in labels
+    }
+    target_by_class = {
+        split: {label: ratios[split] * total_by_class[label] for label in labels}
+        for split in SPLIT_NAMES
+    }
     assigned: dict[str, str] = {}
     current: dict[str, float] = {s: 0.0 for s in SPLIT_NAMES}
+    current_by_class = {split: {label: 0.0 for label in labels} for split in SPLIT_NAMES}
 
     for subject in subjects:
         dur = subject_durations[subject]
-        # Pick the split that is most under-filled relative to its target
-        best = min(
-            SPLIT_NAMES,
-            key=lambda s: current[s] / (target_durs[s] + 1e-9),
-        )
+        # Minimize normalized squared error for total and per-class duration.
+        class_durations = subject_class_durations[subject]
+        def assignment_cost(candidate: str) -> float:
+            cost = 0.0
+            for split in SPLIT_NAMES:
+                split_duration = current[split] + (dur if split == candidate else 0.0)
+                cost += ((split_duration - target_durs[split]) / max(target_durs[split], 1.0)) ** 2
+                for label in labels:
+                    class_duration = current_by_class[split][label]
+                    if split == candidate:
+                        class_duration += class_durations.get(label, 0.0)
+                    target = target_by_class[split][label]
+                    # Ignore classes with no examples in the full dataset.
+                    if target > 0:
+                        cost += ((class_duration - target) / max(target, 1.0)) ** 2
+            return cost
+
+        empty_splits = [split for split in SPLIT_NAMES if split not in assigned.values()]
+        remaining_subjects = len(subjects) - len(assigned)
+        candidates = empty_splits if remaining_subjects <= len(empty_splits) else list(SPLIT_NAMES)
+        best = min(candidates, key=assignment_cost)
         assigned[subject] = best
         current[best] += dur
+        for label in labels:
+            current_by_class[best][label] += class_durations.get(label, 0.0)
 
     # Log statistics
     for split in SPLIT_NAMES:
