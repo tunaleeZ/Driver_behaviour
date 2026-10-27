@@ -1,6 +1,7 @@
 """Benchmark model forward latency on synthetic tensors without reporting claims."""
 from __future__ import annotations
 import argparse, logging, time
+import sys
 from pathlib import Path
 import numpy as np
 import torch
@@ -56,6 +57,11 @@ def benchmark_model(config: dict, steps: int=30, warmup: int=5, device: str|None
     return {"device":str(dev),"latency_ms_mean":float(np.mean(times)),"latency_ms_p95":float(np.percentile(times,95)),"steps":steps,"synthetic":True}
 
 def main(argv=None):
+    # Keep Vietnamese help readable in Windows consoles using legacy code pages.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     p=argparse.ArgumentParser(description="Benchmark forward model bằng tensor tổng hợp.")
     p.add_argument("--config",type=Path,required=True); p.add_argument("--steps",type=int,default=30); p.add_argument("--warmup",type=int,default=5)
     p.add_argument("--video",type=Path); p.add_argument("--checkpoint",type=Path)

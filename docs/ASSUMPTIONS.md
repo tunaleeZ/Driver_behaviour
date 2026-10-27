@@ -114,3 +114,11 @@ xuất hiện ở nhiều video khác nhau.
 - [ ] Chọn T tối ưu sau khi có kết quả thực nghiệm.
 - [ ] Chọn pooling tối ưu sau khi có kết quả thực nghiệm.
 
+## 9. Giả Định Notebook Kaggle
+
+- Hai notebook là hướng dẫn mẫu, không chứa thông tin repo/dataset riêng của nhóm; cần thay URL GitHub và slug Kaggle giữ chỗ trước khi chạy.
+- Dataset raw và feature được mount read-only dưới `/kaggle/input`; dữ liệu trung gian, checkpoint và log ghi dưới `/kaggle/working`.
+- Kaggle base image có thể thay đổi theo thời gian. Không giả định một hạn mức GPU/storage cố định; không nâng cấp NumPy/protobuf tùy tiện khi cài MediaPipe.
+- Việc cài dependency và tải repository cần Internet. Khi offline, wheel Python tương thích và `face_landmarker.task` phải được cung cấp từ Kaggle Dataset đã mount.
+- Chưa kiểm tra notebook trên phiên Kaggle thực tế; các ô cài đặt và huấn luyện là hướng dẫn, phải chọn đúng dataset/config trước khi thực thi.
+

@@ -2,13 +2,13 @@
 
 ## 1. Chuẩn Bị Tài Khoản Kaggle
 
-### Bật Internet (bắt buộc cho bước tải gói và model)
+### Bật Internet (tùy chọn)
 - Vào Settings → Phone Verification để xác minh số điện thoại.
 - Sau khi xác minh, khi tạo notebook chọn **Internet → On**.
 
 ### Chọn GPU
 - Trong Notebook settings: Accelerator → **GPU T4 x2** hoặc **P100**.
-- Giới hạn GPU: 30 giờ/tuần.
+- Hạn mức GPU và dung lượng thay đổi theo tài khoản/chính sách Kaggle; xem thông tin hiển thị trong phiên, không dựa vào con số cố định trong tài liệu.
 
 ---
 
@@ -85,22 +85,25 @@ Nếu mediapipe không thể pip install offline:
 
 ## 7. Xử Lý Xung Đột Phiên Bản mediapipe/numpy/protobuf
 
-mediapipe có thể xung đột với phiên bản numpy hoặc protobuf của Kaggle.
-Nếu gặp lỗi, thử:
+`mediapipe` có thể yêu cầu phiên bản Python, NumPy hoặc protobuf khác với môi trường Kaggle hiện tại. Hãy kiểm tra ràng buộc của wheel tương thích trước khi cài; không nâng cấp NumPy/protobuf một cách mù quáng vì có thể làm hỏng PyTorch/OpenCV đã cài sẵn. Thử cài thêm package mà không thay các package nền:
 ```bash
-pip install mediapipe --upgrade --quiet
+pip install mediapipe --no-deps --quiet
 ```
-Nếu vẫn lỗi, kiểm tra phiên bản:
+Nếu import lỗi, kiểm tra phiên bản và thông báo dependency resolver:
 ```python
 import mediapipe; print(mediapipe.__version__)
 import numpy; print(numpy.__version__)
 import google.protobuf; print(google.protobuf.__version__)
 ```
-Và điều chỉnh phiên bản trong requirements.txt (lưu ý: **không pin** torch/numpy).
+Chọn wheel mediapipe phù hợp với Python/NumPy có sẵn hoặc khởi tạo môi trường tương thích riêng; không pin torch/numpy trong `requirements.txt`.
+
+## 8. Chạy Notebook
+
+Mở `notebooks/kaggle_01_preprocess.ipynb` để cấu hình repo, raw dataset và thư mục work. Raw dataset phải được mount read-only; mọi artifact trung gian ghi vào `/kaggle/working/dbd_work`. Sau khi kiểm tra metadata và split, lưu đặc trưng đã trích thành Kaggle Dataset riêng nếu cần dùng lại. Mở `notebooks/kaggle_02_train.ipynb`, gắn dataset đặc trưng và lưu checkpoint trong `/kaggle/working`. Không commit output của notebook vào repo.
 
 ---
 
-## 8. Mẹo Tăng Tốc Đọc Dữ Liệu
+## 9. Mẹo Tăng Tốc Đọc Dữ Liệu
 
 Kaggle I/O với nhiều file nhỏ (JPG) rất chậm. Dùng cờ `--pack` khi trích frame:
 ```bash
@@ -110,7 +113,7 @@ Cờ này lưu thêm file `.npy` uint8 cho mỗi segment để đọc nhanh hơn
 
 ---
 
-## 9. Cấu Trúc Thư Mục trên Kaggle
+## 10. Cấu Trúc Thư Mục trên Kaggle
 
 ```
 /kaggle/input/<raw-dataset-slug>/   <- dataset video gốc (read-only)

@@ -60,11 +60,22 @@ pip install -r requirements.txt
 
 ### Trên Kaggle
 
-Xem `docs/KAGGLE_GUIDE.md` để biết hướng dẫn chi tiết.
+Mở `notebooks/kaggle_01_preprocess.ipynb` để xử lý video và trích đặc trưng, sau đó dùng `notebooks/kaggle_02_train.ipynb` để huấn luyện. Cả hai notebook là mẫu: thay URL/slug giữ chỗ và gắn dataset private của nhóm theo hướng dẫn tại `docs/KAGGLE_GUIDE.md`. Khi Internet tắt, gắn sẵn wheel dependency và `face_landmarker.task` thành Kaggle Dataset.
 
 ---
 
 ## Quy Trình End-to-End
+
+### Khi Đã Có Dữ Liệu Thật
+
+1. Đặt video vào `raw/public/` hoặc upload Kaggle Dataset private, giữ cấu trúc `raw/`.
+2. Điền annotation thật vào `annotations/metadata.xlsx`.
+3. Chạy `validate_metadata.py` và xử lý hết lỗi.
+4. Chạy `cut_segments.py`.
+5. Chạy `make_splits.py`; rà soát split theo subject trước khi trích xuất.
+6. Chạy `extract_frames.py` và `extract_landmarks.py`.
+7. Kiểm tra hình bằng `visualize_landmarks.py`.
+8. Huấn luyện theo thứ tự E0 → E3; chọn cấu hình bằng validation và chỉ đánh giá test ở cuối.
 
 ### Bước 1: Khởi tạo cấu trúc thư mục
 
