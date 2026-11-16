@@ -10,12 +10,13 @@ camera_view:
   - unknown
 
 lighting:
+  - light
+  - dark
   - day
   - night
   - low_light
   - mixed
   - unknown
-
 glasses:
   - none
   - glasses
