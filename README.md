@@ -1,14 +1,4 @@
 # Hệ Thống Nhận Diện Hành Vi Tài Xế Lái Xe Ô Tô
-
-**Nhóm 10 — ĐH Bách Khoa Hà Nội**
-
-> **Lưu ý quan trọng:** Repo này chứa code, config và tài liệu.
-> **Video và dữ liệu nặng KHÔNG được commit lên GitHub** vì video chứa khuôn mặt
-> người (quyền riêng tư) và kích thước quá lớn.
-> Video được upload riêng thành Kaggle Dataset (private).
-
----
-
 ## Giới Thiệu
 
 Hệ thống nhận diện 5 lớp hành vi của tài xế lái xe ô tô:
