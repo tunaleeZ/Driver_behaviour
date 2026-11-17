@@ -221,59 +221,44 @@ class MediaPipeFaceExtractor:
             raise RuntimeError(f"Cannot open video file: {video_path}")
 
         orig_fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         fps = float(target_fps if target_fps and target_fps > 0 else (orig_fps if orig_fps > 0 else 30.0))
 
-        frames_rgb: list[np.ndarray] = []
-        frame_timestamps_ms: list[int] = []
-
-        cur_idx = 0
-        while True:
-            ret, frame_bgr = cap.read()
-            if not ret:
-                break
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            frames_rgb.append(frame_rgb)
-            ts_ms = int(round((cur_idx / (orig_fps if orig_fps > 0 else 30.0)) * 1000.0))
-            frame_timestamps_ms.append(ts_ms)
-            cur_idx += 1
-
-        cap.release()
-
-        n_frames = len(frames_rgb)
-        if n_frames == 0:
-            raise RuntimeError(f"No frames could be read from {video_path}")
-
         k_landmarks = len(self.selected_indices)
-        valid_arr = np.zeros(n_frames, dtype=bool)
-        geo_arr = np.zeros((n_frames, 7), dtype=np.float32)
-        lm_sel_arr = np.zeros((n_frames, k_landmarks, 2), dtype=np.float32)
+        valid_list: list[bool] = []
+        geo_list: list[list[float]] = []
+        lm_sel_list: list[np.ndarray] = []
+        timestamps_list: list[int] = []
         full_lm_list: list[np.ndarray] = [] if save_full else None
 
         landmarker = self._create_landmarker()
+        cur_idx = 0
+        last_ts_ms = -1
 
         try:
-            # Monotonically increasing timestamp tracking
-            last_ts_ms = -1
+            while True:
+                ret, frame_bgr = cap.read()
+                if not ret:
+                    break
 
-            for i in range(n_frames):
-                ts = frame_timestamps_ms[i]
-                if ts <= last_ts_ms:
-                    ts = last_ts_ms + 1
-                last_ts_ms = ts
+                ts_ms = int(round((cur_idx / (orig_fps if orig_fps > 0 else 30.0)) * 1000.0))
+                if ts_ms <= last_ts_ms:
+                    ts_ms = last_ts_ms + 1
+                last_ts_ms = ts_ms
+                timestamps_list.append(ts_ms)
 
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frames_rgb[i])
-                detection_result = landmarker.detect_for_video(mp_image, ts)
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                detection_result = landmarker.detect_for_video(mp_image, ts_ms)
 
                 if detection_result.face_landmarks and len(detection_result.face_landmarks) > 0:
                     face = detection_result.face_landmarks[0]
                     # Convert to normalized array (478, 3)
                     lm_norm = np.array([[p.x, p.y, p.z] for p in face], dtype=np.float32)
 
-                    valid_arr[i] = True
+                    valid_list.append(True)
 
                     # Geometric features
                     ear_r, ear_l, ear_avg = compute_ear(
@@ -283,7 +268,7 @@ class MediaPipeFaceExtractor:
                     yaw, pitch, roll = estimate_head_pose(lm_norm, (height, width))
 
                     # geo: [ear_left, ear_right, ear_avg, mar, yaw, pitch, roll]
-                    geo_arr[i] = [ear_l, ear_r, ear_avg, mar, yaw, pitch, roll]
+                    geo_list.append([ear_l, ear_r, ear_avg, mar, yaw, pitch, roll])
 
                     # Selected normalized landmarks
                     k_pts = process_frame_landmarks(
@@ -292,17 +277,29 @@ class MediaPipeFaceExtractor:
                         origin_type="nose",
                         compensate_roll=False,
                     )
-                    lm_sel_arr[i] = k_pts
+                    lm_sel_list.append(k_pts)
 
                     if save_full:
                         full_lm_list.append(lm_norm)
                 else:
-                    valid_arr[i] = False
+                    valid_list.append(False)
+                    geo_list.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    lm_sel_list.append(np.zeros((k_landmarks, 2), dtype=np.float32))
                     if save_full:
                         full_lm_list.append(np.zeros((478, 3), dtype=np.float32))
 
+                cur_idx += 1
         finally:
+            cap.release()
             landmarker.close()
+
+        n_frames = len(timestamps_list)
+        if n_frames == 0:
+            raise RuntimeError(f"No frames could be read from {video_path}")
+
+        valid_arr = np.array(valid_list, dtype=bool)
+        geo_arr = np.array(geo_list, dtype=np.float32)
+        lm_sel_arr = np.array(lm_sel_list, dtype=np.float32)
 
         # Interpolate missing frames
         if not np.all(valid_arr):
@@ -310,7 +307,7 @@ class MediaPipeFaceExtractor:
             lm_sel_arr = interpolate_missing_frames(lm_sel_arr, valid_arr, max_gap_frames=self.max_gap_frames)
 
         result = {
-            "timestamps_ms": np.array(frame_timestamps_ms, dtype=np.int64),
+            "timestamps_ms": np.array(timestamps_list, dtype=np.int64),
             "valid": valid_arr,
             "fps": fps,
             "geo": geo_arr,

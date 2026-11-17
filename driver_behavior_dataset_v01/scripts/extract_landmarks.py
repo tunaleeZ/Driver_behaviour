@@ -159,6 +159,8 @@ def main(argv=None) -> int:
         res["glasses"] = meta_row.get("glasses", "unknown")
         results.append(res)
         pbar.set_postfix({"id": seg_id, "status": res["status"]})
+        import gc
+        gc.collect()
 
     res_df = pd.DataFrame(results)
     success_df = res_df[res_df["status"] == "SUCCESS"]
