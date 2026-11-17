@@ -135,6 +135,9 @@ python -m dbm.train --config configs/models/landmark_lstm.yaml
 # CNN-LSTM
 python -m dbm.train --config configs/models/cnn_lstm.yaml
 
+# CNN thuần: train trên dataset ảnh theo cấu trúc train/val/test/class_name/*.jpg
+python -m dbm.train_images --data /path/to/image_dataset --output outputs/cnn_image
+
 # Với override tham số
 python -m dbm.train --config configs/models/geo_lstm.yaml --override lr=0.001 batch_size=32
 ```
@@ -150,6 +153,8 @@ python -m dbm.evaluate --checkpoint outputs/<run_name>/best.pt --split test
 ```bash
 python -m dbm.infer_video --checkpoint outputs/<run_name>/best.pt --video path/to/video.mp4
 ```
+
+Checkpoint `cnn_image` cũng nhận video bằng lệnh trên: model lấy mẫu frame (mặc định 5 FPS), dự đoán từng ảnh rồi làm mượt xác suất. Đây là nhận dạng frame-wise; nó không học thời lượng/trình tự hành vi như CNN-LSTM hay Geo/Landmark-LSTM. `notebooks/kaggle_02_train.ipynb` hướng dẫn train CNN từ dataset ảnh và chạy suy luận video trên Kaggle hoặc Colab. Dataset cần thư mục lớp; nếu tự chia ảnh thành train/val/test, nên kiểm tra ảnh trùng người/video và ưu tiên chia theo nhóm nguồn.
 
 ### Sweep thí nghiệm
 

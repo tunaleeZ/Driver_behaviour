@@ -16,6 +16,7 @@ from dbm.features.mediapipe_extractor import MediaPipeFaceExtractor
 from dbm.labels import index_to_label
 from dbm.logging_utils import setup_logging
 from dbm.models.build import build_cnn_lstm, build_lstm
+from dbm.models.cnn_image import CNNImageClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,8 @@ def smooth_probabilities(probs: np.ndarray, method: str = "ema", span: int = 3) 
     return np.asarray(result)
 
 
-def _read_video_frames(video: Path, input_size: int, target_fps: float | None = None) -> tuple[np.ndarray, float]:
+def _read_video_frames(video: Path, input_size: int, target_fps: float | None = None,
+                      store_size: int = 128, stretch: bool = False) -> tuple[np.ndarray, float]:
     """Decode RGB frames and apply the same letterbox/center-crop eval transform."""
     cap = cv2.VideoCapture(str(video))
     if not cap.isOpened():
@@ -57,9 +59,12 @@ def _read_video_frames(video: Path, input_size: int, target_fps: float | None = 
             if timestamp + 1e-9 < next_time:
                 continue
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            stored = resize_frame(rgb, (128, 128), "letterbox")
-            top = (128 - input_size) // 2
-            frames.append(stored[top:top + input_size, top:top + input_size])
+            if stretch:
+                frames.append(resize_frame(rgb, (input_size, input_size), "stretch"))
+            else:
+                stored = resize_frame(rgb, (store_size, store_size), "letterbox")
+                top = (store_size - input_size) // 2
+                frames.append(stored[top:top + input_size, top:top + input_size])
             next_time += 1.0 / fps
     finally:
         cap.release()
@@ -78,12 +83,29 @@ def infer_video(video: Path, checkpoint_path: Path, output: Path, extractor=None
     run_dir = checkpoint_path.parent
     stats = json.loads((run_dir / "stats.json").read_text(encoding="utf-8"))
     model_type = config.get("model_type", "lstm_classifier")
-    steps = int(window_size or config.get("window_size", 30))
+    steps = 1 if model_type == "cnn_image" else int(window_size or config.get("window_size", 30))
     stride = int(stride or config.get("stride", max(1, steps // 2)))
     if steps <= 0 or stride <= 0:
         raise ValueError("window_size and stride must be positive")
 
-    if model_type == "cnn_lstm":
+    if model_type == "cnn_image":
+        input_size = int(config.get("input_size", 224))
+        frames, fps = _read_video_frames(video, input_size, config.get("target_fps", 5), stretch=True)
+        model = CNNImageClassifier(channels=config.get("cnn_channels", (32, 64, 128, 256)),
+                                   n_classes=len(checkpoint["classes"])).eval()
+        model.load_state_dict(checkpoint["model"])
+        mean = torch.tensor((.485, .456, .406))[None, :, None, None]
+        std = torch.tensor((.229, .224, .225))[None, :, None, None]
+        batch_size = int(config.get("inference_batch_size", 32))
+        probabilities = []
+        with torch.inference_mode():
+            for offset in range(0, len(frames), batch_size):
+                batch = torch.from_numpy(frames[offset:offset + batch_size].copy()).permute(0, 3, 1, 2).float() / 255.0
+                probabilities.append(model((batch - mean) / std).softmax(-1))
+        probabilities = torch.cat(probabilities).numpy()
+        starts = list(range(len(frames)))
+        total_steps = len(frames)
+    elif model_type == "cnn_lstm":
         input_size = int(config.get("input_size", 112))
         if extractor is not None and hasattr(extractor, "extract_frames_from_video"):
             frames, fps = extractor.extract_frames_from_video(video, input_size=input_size,
@@ -138,7 +160,9 @@ def infer_video(video: Path, checkpoint_path: Path, output: Path, extractor=None
         writer.writerow(["window_index", "start_seconds", "end_seconds", "prediction", "probabilities", "synthetic"])
         for index, (start, probability) in enumerate(zip(starts, smoothed)):
             end = min(start + steps, total_steps)
-            writer.writerow([index, start / fps, end / fps, index_to_label(int(probability.argmax())),
+            class_name = (checkpoint["classes"][int(probability.argmax())] if model_type == "cnn_image"
+                          else index_to_label(int(probability.argmax())))
+            writer.writerow([index, start / fps, end / fps, class_name,
                              " ".join(str(float(item)) for item in probability), bool(config.get("synthetic", False))])
     return output
 

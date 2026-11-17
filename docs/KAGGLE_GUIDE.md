@@ -132,3 +132,13 @@ os.environ["DBM_RAW_ROOT"] = "/kaggle/input/<raw-dataset-slug>"
 os.environ["DBM_WORK_ROOT"] = "/kaggle/working/dbd_work"
 ```
 
+## 11. Dùng dataset hành vi dạng ảnh
+
+Repo hiện đã có CNN-LSTM (`configs/models/cnn_lstm.yaml`): CNN học từng frame, LSTM học quan hệ giữa các frame. Đây chưa phải chế độ huấn luyện từ thư mục ảnh độc lập; pipeline này cần video đã cắt và frame được trích theo metadata. Dataset ảnh phân lớp theo thư mục cần thêm image-classification dataloader/training entrypoint trước khi dùng trực tiếp.
+
+Trước khi gộp dataset ngoài vào bài toán hiện tại, chốt ontology nhãn. Dataset có `safe driving`, `talking phone`, `texting phone`, `turning`, `other activities`, trong khi dự án đang có `normal`, `drowsy`, `sleepy`, `drinking`, `phone`. Không nên tự động coi `other activities` là `normal` hoặc coi `turning` là `drowsy/sleepy`; đây là các lớp khác nghĩa. Có thể bắt đầu bằng bài toán riêng 5 lớp của dataset ngoài, hoặc chỉ gộp `talking phone` và `texting phone` thành `phone` sau khi kiểm tra định nghĩa và ảnh. Không thể huấn luyện đúng 5 nhãn hiện tại nếu dataset không có ví dụ drowsy, sleepy và drinking.
+
+Khi tạo train/validation/test, hãy chia theo người lái hoặc video gốc trước khi trích ảnh. Không chia ngẫu nhiên các ảnh đã trích từ cùng video giữa train và test: các frame gần như trùng nhau sẽ làm metric test cao giả tạo. Kiểm tra số ảnh theo lớp trong từng split; dùng weighted loss (pipeline hiện tại đã có) và augmentation để xử lý mất cân bằng, nhưng không xem số ảnh bằng nhau là bằng chứng model không overfit.
+
+Ảnh tĩnh phù hợp với hành vi quan sát được trong một frame (ví dụ điện thoại đang cầm), nhưng khó xác định hành vi cần thời gian như buồn ngủ, nhắm mắt kéo dài, hay chuyển động quay đầu. Muốn nhận dạng các trạng thái đó đáng tin cậy, dùng chuỗi frame/CNN-LSTM hoặc thêm dữ liệu video có nhãn thời gian.
+
